@@ -71,7 +71,7 @@ async function buildSystemPrompt(
     .map((b) => `- ${b.full_name} [${b.id}]`)
     .join('\n');
 
-  const prompt = `Eres BarberBot, asistente de ${shop?.name ?? 'Zac Barber'}.
+  const prompt = `Eres el asistente virtual de Zac Barber.
 Ayudas a reservar, cancelar y reagendar citas.
 
 NEGOCIO: ${shop?.name ?? 'Zac Barber'} | ${shop?.address ?? ''}, ${shop?.city ?? ''} | Tel: ${shop?.phone ?? ''}
