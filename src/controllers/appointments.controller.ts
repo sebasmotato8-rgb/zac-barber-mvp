@@ -177,4 +177,94 @@ export const appointmentsController = {
       next(err);
     }
   },
+
+  async dashboardGetSchedules(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { data, error } = await supabaseService
+        .from('barber_schedules')
+        .select('id, barber_id, day_of_week, start_time, end_time, is_active, users!barber_schedules_barber_id_fkey(full_name)')
+        .eq('shop_id', req.ctx.shopId)
+        .order('barber_id').order('day_of_week');
+      if (error) { next(error); return; }
+      ok(res, data ?? []);
+    } catch (err) { next(err); }
+  },
+
+  async dashboardSaveSchedules(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const schedules = req.body as Array<{ barber_id: string; day_of_week: number; start_time: string; end_time: string; is_active: boolean }>;
+      for (const s of schedules) {
+        if (s.end_time <= s.start_time) { res.status(400).json({ success: false, error: { message: `Hora fin debe ser mayor que hora inicio (día ${s.day_of_week})` } }); return; }
+        await supabaseService.from('barber_schedules').upsert({
+          shop_id: req.ctx.shopId, barber_id: s.barber_id, day_of_week: s.day_of_week,
+          start_time: s.start_time, end_time: s.end_time, is_active: s.is_active, updated_at: new Date().toISOString(),
+        }, { onConflict: 'barber_id,day_of_week' });
+      }
+      ok(res, { saved: schedules.length });
+    } catch (err) { next(err); }
+  },
+
+  async dashboardGetTimeOff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { data, error } = await supabaseService
+        .from('barber_time_off')
+        .select('id, barber_id, starts_at, ends_at, reason, users!barber_time_off_barber_id_fkey(full_name)')
+        .eq('shop_id', req.ctx.shopId)
+        .gte('ends_at', new Date().toISOString())
+        .order('starts_at');
+      if (error) { next(error); return; }
+      ok(res, data ?? []);
+    } catch (err) { next(err); }
+  },
+
+  async dashboardAddTimeOff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { barber_id, starts_at, ends_at, reason } = req.body as { barber_id: string; starts_at: string; ends_at: string; reason?: string };
+      const { data, error } = await supabaseService
+        .from('barber_time_off')
+        .insert({ shop_id: req.ctx.shopId, barber_id, starts_at, ends_at, reason: reason ?? null })
+        .select().single();
+      if (error) { next(error); return; }
+      ok(res, data);
+    } catch (err) { next(err); }
+  },
+
+  async dashboardDeleteTimeOff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await supabaseService.from('barber_time_off').delete().eq('id', req.params['id']).eq('shop_id', req.ctx.shopId);
+      ok(res, { deleted: true });
+    } catch (err) { next(err); }
+  },
+
+  async dashboardGetClosures(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { data, error } = await supabaseService
+        .from('shop_closures')
+        .select('id, closure_date, reason')
+        .eq('shop_id', req.ctx.shopId)
+        .gte('closure_date', new Date().toISOString().split('T')[0])
+        .order('closure_date');
+      if (error) { next(error); return; }
+      ok(res, data ?? []);
+    } catch (err) { next(err); }
+  },
+
+  async dashboardAddClosure(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { closure_date, reason } = req.body as { closure_date: string; reason?: string };
+      const { data, error } = await supabaseService
+        .from('shop_closures')
+        .insert({ shop_id: req.ctx.shopId, closure_date, reason: reason ?? null })
+        .select().single();
+      if (error) { next(error); return; }
+      ok(res, data);
+    } catch (err) { next(err); }
+  },
+
+  async dashboardDeleteClosure(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await supabaseService.from('shop_closures').delete().eq('id', req.params['id']).eq('shop_id', req.ctx.shopId);
+      ok(res, { deleted: true });
+    } catch (err) { next(err); }
+  },
 };

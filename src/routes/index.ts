@@ -71,6 +71,16 @@ dashboardPublic.get('/appointments', appointmentsController.dashboardList);
 dashboardPublic.patch('/appointments/:id/status', appointmentsController.dashboardUpdateStatus);
 dashboardPublic.delete('/appointments/:id', appointmentsController.dashboardDelete);
 
+// Availability management
+dashboardPublic.get('/schedules', appointmentsController.dashboardGetSchedules);
+dashboardPublic.put('/schedules', appointmentsController.dashboardSaveSchedules);
+dashboardPublic.get('/time-off', appointmentsController.dashboardGetTimeOff);
+dashboardPublic.post('/time-off', appointmentsController.dashboardAddTimeOff);
+dashboardPublic.delete('/time-off/:id', appointmentsController.dashboardDeleteTimeOff);
+dashboardPublic.get('/closures', appointmentsController.dashboardGetClosures);
+dashboardPublic.post('/closures', appointmentsController.dashboardAddClosure);
+dashboardPublic.delete('/closures/:id', appointmentsController.dashboardDeleteClosure);
+
 router.use('/public', chat);
 router.use('/public/dashboard', dashboardPublic);
 
