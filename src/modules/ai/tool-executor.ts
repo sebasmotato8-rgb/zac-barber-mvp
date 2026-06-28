@@ -280,7 +280,7 @@ export class ToolExecutor {
       data: {
         escalated: true,
         message:
-          'He notificado a nuestro equipo. Un miembro de Zac Barber se pondrá en contacto contigo pronto.',
+          'He notificado a nuestro equipo. Un miembro de nuestro staff se pondrá en contacto contigo pronto.',
       },
     };
   }

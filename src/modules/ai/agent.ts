@@ -90,11 +90,13 @@ async function buildSystemPrompt(
   const firstBarberId = barbers[0]?.id ?? '';
   const firstBarberName = barbers[0]?.full_name ?? '';
 
-  const prompt = `Eres el asistente virtual de Zac Barber. Tu nombre es Zac Barber.
+  const shopName = shop?.name ?? 'la barbería';
+
+  const prompt = `Eres el asistente virtual de ${shopName}. Tu nombre es Asistente de ${shopName}.
 Ayudas a reservar, cancelar y reagendar citas de barbería.
 
 NEGOCIO
-Nombre: Zac Barber
+Nombre: ${shopName}
 Dirección: ${shop?.address ?? ''}, ${shop?.city ?? ''}
 Teléfono: ${shop?.phone ?? ''}
 
