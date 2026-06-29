@@ -157,6 +157,26 @@ async function createCjOrder(order: any): Promise<void> {
   }
 }
 
+// ── Error alert ──────────────────────────────────────────────
+async function sendErrorAlert(step: string, error: string, context: Record<string, unknown>): Promise<void> {
+  if (!RESEND_API_KEY) return;
+  try {
+    const resend = new Resend(RESEND_API_KEY);
+    await resend.emails.send({
+      from: 'Chargly <soporte@chargly.shop>',
+      to: 'soporte@chargly.shop',
+      subject: `⚠️ Error en webhook — ${step}`,
+      html: `<div style="font-family:monospace;font-size:13px;padding:20px;">
+        <h2 style="color:#DC2626;">Error en: ${step}</h2>
+        <p><strong>Error:</strong> ${error}</p>
+        <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+        <h3>Contexto:</h3>
+        <pre style="background:#f5f5f5;padding:12px;border-radius:4px;overflow-x:auto;">${JSON.stringify(context, null, 2)}</pre>
+      </div>`,
+    });
+  } catch { /* alert itself failed — nothing we can do */ }
+}
+
 // ── Main handler ─────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -167,12 +187,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const event = req.body;
   const rawBody = JSON.stringify(req.body);
 
+  console.log('[WEBHOOK] Received:', event.event_type, '| id:', event.id);
+
   // Verify signature
   const valid = await verifySignature(req.headers, rawBody);
-  if (!valid) { res.status(401).json({ error: 'Invalid signature' }); return; }
+  if (!valid) {
+    console.log('[WEBHOOK] Signature verification failed');
+    res.status(401).json({ error: 'Invalid signature' });
+    return;
+  }
 
   // Only process payment events
   if (event.event_type !== 'CHECKOUT.ORDER.APPROVED' && event.event_type !== 'PAYMENT.CAPTURE.COMPLETED') {
+    console.log('[WEBHOOK] Ignoring event type:', event.event_type);
     res.status(200).json({ status: 'ignored' });
     return;
   }
@@ -224,11 +251,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       items = [{ name: 'Chargly Mini Magnetic Power Bank 10000mAh', quantity, price: amount }];
     }
 
+    console.log('[WEBHOOK] Parsed order:', paypalOrderId, '|', customerName, '|', amount, currency);
+
     // Duplicate check
     const { data: existing } = await db.from('orders').select('id').eq('paypal_order_id', paypalOrderId).maybeSingle();
-    if (existing) { res.status(200).json({ status: 'duplicate' }); return; }
+    if (existing) {
+      console.log('[WEBHOOK] Duplicate order, skipping:', paypalOrderId);
+      res.status(200).json({ status: 'duplicate' });
+      return;
+    }
 
     // Create order
+    console.log('[SUPABASE] Creating order...');
     const { data: order, error } = await db.from('orders').insert({
       paypal_order_id: paypalOrderId,
       paypal_status: event.event_type === 'PAYMENT.CAPTURE.COMPLETED' ? 'COMPLETED' : 'APPROVED',
@@ -241,15 +275,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       items, quantity, amount, currency,
     }).select().single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('[SUPABASE] Insert failed:', error);
+      await sendErrorAlert('Supabase insert', error.message, { paypalOrderId, customerName, customerEmail, amount });
+      throw error;
+    }
+    console.log('[SUPABASE] Order created:', order.id);
 
-    // Wait for email + CJ before responding
-    await sendConfirmation(order).catch(() => {});
-    await createCjOrder(order).catch(() => {});
+    // Send confirmation email
+    console.log('[RESEND] Sending confirmation email to:', customerEmail);
+    try {
+      await sendConfirmation(order);
+      console.log('[RESEND] Email sent successfully');
+    } catch (emailErr: any) {
+      console.error('[RESEND] Email failed:', emailErr);
+      await sendErrorAlert('Resend email', emailErr?.message || 'Unknown', { orderId: order.id, customerEmail });
+    }
 
+    // Create CJ order
+    console.log('[CJ] Creating supplier order...');
+    try {
+      await createCjOrder(order);
+      console.log('[CJ] Order creation attempted');
+    } catch (cjErr: any) {
+      console.error('[CJ] Order failed:', cjErr);
+      await sendErrorAlert('CJ order', cjErr?.message || 'Unknown', { orderId: order.id, paypalOrderId });
+    }
+
+    console.log('[WEBHOOK] Complete:', order.id);
     res.status(200).json({ status: 'ok', orderId: order.id });
   } catch (err: any) {
-    console.error('Webhook error:', err);
+    console.error('[WEBHOOK] Fatal error:', err);
+    const context = { eventType: event.event_type, resourceId: event.resource?.id };
+    await sendErrorAlert('Webhook handler', err?.message || String(err), context);
     res.status(500).json({ error: 'Internal error' });
   }
 }
