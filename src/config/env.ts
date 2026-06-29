@@ -31,7 +31,7 @@ const envSchema = z.object({
   PAYPAL_MODE: z.enum(['sandbox', 'live']).default('live'),
 
   CJ_API_KEY: z.string().default(''),
-  CJ_PRODUCT_SKU: z.string().default('CJCD135893008HS'),
+  CJ_PRODUCT_VID: z.string().default('1533362500308316160'),
 
   RESEND_API_KEY: z.string().default(''),
 

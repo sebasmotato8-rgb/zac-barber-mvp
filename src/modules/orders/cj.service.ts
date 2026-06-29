@@ -2,14 +2,25 @@ import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import type { OrderRow } from './orders.repository';
 
-const CJ_BASE = 'https://developers.cjdropshipping.com/api/v2';
+const CJ_BASE = 'https://developers.cjdropshipping.com/api2.0/v1';
 
-async function cjFetch(path: string, options: RequestInit = {}): Promise<any> {
+async function getAccessToken(): Promise<string> {
+  const res = await fetch(`${CJ_BASE}/authentication/getAccessToken`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: '', password: '', apiKey: env.CJ_API_KEY }),
+  });
+  const json = await res.json() as any;
+  if (!json.result) throw new Error(json.message || 'CJ auth failed');
+  return json.data.accessToken;
+}
+
+async function cjFetch(token: string, path: string, options: RequestInit = {}): Promise<any> {
   const res = await fetch(`${CJ_BASE}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      'CJ-Access-Token': env.CJ_API_KEY,
+      'CJ-Access-Token': token,
       ...options.headers,
     },
   });
@@ -30,31 +41,33 @@ export async function createCjOrder(order: OrderRow): Promise<{ orderId: string 
     return null;
   }
 
-  const body = {
-    orderNumber: order.paypal_order_id,
-    shippingZip: '',
-    shippingCountryCode: order.shipping_country.length === 2 ? order.shipping_country : 'US',
-    shippingCountry: order.shipping_country,
-    shippingProvince: order.shipping_city,
-    shippingCity: order.shipping_city,
-    shippingAddress: order.shipping_address,
-    shippingCustomerName: order.customer_name,
-    shippingPhone: order.customer_phone || '',
-    remark: `Chargly order — PayPal #${order.paypal_order_id}`,
-    fromCountryCode: 'CN',
-    logisticName: 'CJPacket Ordinary',
-    houseNumber: '',
-    email: order.customer_email,
-    products: [
-      {
-        vid: env.CJ_PRODUCT_SKU,
-        quantity: order.quantity,
-      },
-    ],
-  };
-
   try {
-    const result = await cjFetch('/shopping/order/createOrder', {
+    const token = await getAccessToken();
+
+    const body = {
+      orderNumber: order.paypal_order_id,
+      shippingZip: '',
+      shippingCountryCode: order.shipping_country.length === 2 ? order.shipping_country : 'US',
+      shippingCountry: order.shipping_country,
+      shippingProvince: order.shipping_city,
+      shippingCity: order.shipping_city,
+      shippingAddress: order.shipping_address,
+      shippingCustomerName: order.customer_name,
+      shippingPhone: order.customer_phone || '',
+      remark: `Chargly order — PayPal #${order.paypal_order_id}`,
+      fromCountryCode: 'CN',
+      logisticName: 'CJPacket Ordinary',
+      houseNumber: '',
+      email: order.customer_email,
+      products: [
+        {
+          vid: env.CJ_PRODUCT_VID,
+          quantity: order.quantity,
+        },
+      ],
+    };
+
+    const result = await cjFetch(token, '/shopping/order/createOrder', {
       method: 'POST',
       body: JSON.stringify(body),
     });
@@ -74,7 +87,8 @@ export async function getCjOrderTracking(cjOrderId: string): Promise<{ trackingN
   }
 
   try {
-    const result = await cjFetch(`/shopping/order/getOrderDetail?orderId=${cjOrderId}`);
+    const token = await getAccessToken();
+    const result = await cjFetch(token, `/shopping/order/getOrderDetail?orderId=${cjOrderId}`);
     const tracking = result.data?.trackNumber;
     if (!tracking) return null;
 

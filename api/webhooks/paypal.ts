@@ -10,7 +10,7 @@ const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || '';
 const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID || '';
 const PAYPAL_MODE = process.env.PAYPAL_MODE || 'live';
 const CJ_API_KEY = process.env.CJ_API_KEY || '';
-const CJ_PRODUCT_SKU = process.env.CJ_PRODUCT_SKU || 'CJCD135893008HS';
+const CJ_PRODUCT_VID = process.env.CJ_PRODUCT_VID || '1533362500308316160';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 
 const PAYPAL_BASE = PAYPAL_MODE === 'live'
@@ -111,14 +111,27 @@ async function sendConfirmation(order: any): Promise<void> {
 }
 
 // ── CJ helper ────────────────────────────────────────────────
+async function getCjToken(): Promise<string> {
+  const r = await fetch('https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: '', password: '', apiKey: CJ_API_KEY }),
+  });
+  const j = await r.json() as any;
+  if (!j.result) throw new Error(j.message || 'CJ auth failed');
+  return j.data.accessToken;
+}
+
 async function createCjOrder(order: any): Promise<void> {
   if (!CJ_API_KEY || CJ_API_KEY === 'CJ_API_KEY_AQUI') return;
   try {
-    const r = await fetch('https://developers.cjdropshipping.com/api/v2/shopping/order/createOrder', {
+    const token = await getCjToken();
+    const r = await fetch('https://developers.cjdropshipping.com/api2.0/v1/shopping/order/createOrder', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'CJ-Access-Token': CJ_API_KEY },
+      headers: { 'Content-Type': 'application/json', 'CJ-Access-Token': token },
       body: JSON.stringify({
         orderNumber: order.paypal_order_id,
+        shippingZip: '',
         shippingCountryCode: order.shipping_country.length === 2 ? order.shipping_country : 'US',
         shippingCountry: order.shipping_country,
         shippingProvince: order.shipping_city,
@@ -126,17 +139,22 @@ async function createCjOrder(order: any): Promise<void> {
         shippingAddress: order.shipping_address,
         shippingCustomerName: order.customer_name,
         shippingPhone: order.customer_phone || '',
-        email: order.customer_email,
+        remark: `Chargly order — PayPal #${order.paypal_order_id}`,
         fromCountryCode: 'CN',
         logisticName: 'CJPacket Ordinary',
-        products: [{ vid: CJ_PRODUCT_SKU, quantity: order.quantity }],
+        houseNumber: '',
+        email: order.customer_email,
+        products: [{ vid: CJ_PRODUCT_VID, quantity: order.quantity }],
       }),
     });
     const j = await r.json() as any;
+    console.log('CJ createOrder response:', JSON.stringify(j));
     if (j.data?.orderId) {
       await db.from('orders').update({ cj_order_id: j.data.orderId, cj_status: 'created', status: 'processing' }).eq('id', order.id);
     }
-  } catch { /* logged but non-blocking */ }
+  } catch (err) {
+    console.error('CJ order error:', err);
+  }
 }
 
 // ── Main handler ─────────────────────────────────────────────
