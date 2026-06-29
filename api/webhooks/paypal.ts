@@ -225,9 +225,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (error) throw error;
 
-    // Non-blocking: email + CJ
-    sendConfirmation(order).catch(() => {});
-    createCjOrder(order).catch(() => {});
+    // Wait for email + CJ before responding
+    await sendConfirmation(order).catch(() => {});
+    await createCjOrder(order).catch(() => {});
 
     res.status(200).json({ status: 'ok', orderId: order.id });
   } catch (err: any) {
